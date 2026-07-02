@@ -1,175 +1,184 @@
-// bot_notifier.ino — a robot "pet" that shows Claude Code session state.
+// bot_notifier.ino — "PET BOT" status card for Claude Code sessions.
 // Hardware: Arduino Nano/Uno + ST7735S 128x160 SPI TFT. Protocol: README.md.
 //
 // Serial commands (one line each, 115200 baud):
 //   ! msg  attention   > msg  busy   = msg  ready   x msg  error   . msg  idle
+//
+// Screen layout (pet-card style):
+//   +----------------------------+
+//   | PET BOT              LV.01 |  header
+//   |      (o o)  <- round bot   |  play area: white body, dark face,
+//   |       \_/      with feet   |  RoboEyes + curvy mouth, stars
+//   | ENERGY [######  ]          |  stats panel
+//   | HAPPY                      |  mood word
+//   | (i) Beep! I'm ready...     |  speech bubble
+//   +----------------------------+
 
 #include <Adafruit_GFX.h>
 #include <Adafruit_ST7735.h>
 #include <SPI.h>
-#include <avr/pgmspace.h>
+#include "RoboEyes_TFT.h"
+#include "RoboMouth_TFT.h"
 
 #define TFT_CS  10
 #define TFT_RST  9
 #define TFT_DC   8
+#define BTN_PIN  3   // test button to GND (INPUT_PULLUP); each press cycles states
 Adafruit_ST7735 tft = Adafruit_ST7735(TFT_CS, TFT_DC, TFT_RST);
 
-// Sprite grid: the bot is SW x SH cells drawn inside a GW x GH grid so it can
-// move vertically without repainting the whole screen. One cell = SCALE px.
-#define SW 17
-#define SH 14
-#define GW 17
-#define GH 18
-#define SCALE 7        // GW*SCALE must stay <= 128
-#define BASE_TOP 3     // resting row inside the grid
+RoboEyes<Adafruit_ST7735> eyes(tft);
+RoboMouth<Adafruit_ST7735> mouth(tft);
 
-// Animation timing (ms). Periods are co-prime-ish so motion never syncs up.
-#define BLINK_PERIOD  2800
-#define BLINK_DUR      140
-#define GLANCE_PERIOD 4200   // idle: eyes wander slowly
-#define SCAN_STEP      600   // busy: eyes sweep left-right
-#define BOUNCE_DUR     420
-#define BOUNCE_H         3
-#define BOB_MS         500
-
-#define STATUS_H 16
-#define MSG_Y   146
-#define MSG_H    14
-
-#define C_BG    0x39AA
+// ---- colors ----
+#define C_BG    0x0000    // black, like the reference card
+#define C_FACE  0x0861    // dark teal face screen
+#define C_WHITE 0xFFFF
+#define C_CYAN  0x07FF
+#define C_DIM   0x0339    // dim teal for frames and stars
 #define C_RED   0xF800
 #define C_AMBER 0xFD20
 #define C_GREEN 0x07E0
-#define C_WHITE 0xFFFF
-#define C_CYAN  0x07FF
+
+// ---- layout ----
+#define EYES_X   36
+#define EYES_Y   30
+#define EYES_W   56
+#define EYES_H   28
+#define MOUTH_CX 64
+#define MOUTH_CY 70
 
 enum { S_IDLE, S_BUSY, S_READY, S_ATTN, S_ERR };
 
-// Palette indices for grid cells.
-enum { P_BG, P_DARK, P_BODY, P_SCREEN, P_WHITE, P_CYAN, P_RED };
-const uint16_t PAL[7] = { C_BG, 0x2124, 0xBDD7, 0x0861, C_WHITE, C_CYAN, C_RED };
+// Idle micro-moods, cycled over time so the bot feels alive.
+enum { SC_WAIT, SC_LOOK, SC_HAPPY, SC_THINK, SC_IMPATIENT, SC_SLEEPY };
+struct Scene { uint16_t dur; uint8_t kind; };
+const Scene IDLE_SCENES[] = {
+  { 9000, SC_WAIT }, { 8000, SC_LOOK }, { 6000, SC_HAPPY }, { 9000, SC_THINK },
+  { 7000, SC_IMPATIENT }, { 9000, SC_WAIT }, { 11000, SC_SLEEPY }, { 7000, SC_LOOK },
+};
+const uint8_t SCENE_COUNT = sizeof(IDLE_SCENES) / sizeof(IDLE_SCENES[0]);
 
-uint8_t ci(char ch) {
-  switch (ch) {
-    case 'd': return P_DARK;   case 'b': return P_BODY;
-    case 's': return P_SCREEN; case 'w': return P_WHITE;
-    default:  return P_BG;
-  }
-}
-
-// Legend: . background, d dark outline, b body, s face screen, w white.
-// The face (eyes + mouth) is drawn onto the 's' area every frame.
-const char BOT[SH][SW + 1] PROGMEM = {
-  "........w........",
-  "........d........",
-  "...ddddddddddd...",
-  "..dbbbbbbbbbbbd..",
-  ".dbsssssssssssbd.",
-  "ddbsssssssssssbdd",
-  "ddbsssssssssssbdd",
-  ".dbsssssssssssbd.",
-  ".dbsssssssssssbd.",
-  ".dbsssssssssssbd.",
-  "..dbbbbbbbbbbbd..",
-  "...ddddddddddd...",
-  "....dd.....dd....",
-  "................."
+// Per-scene mood word and default bubble message.
+const char* const SCENE_MOOD[6] = { "CALM", "CURIOUS", "HAPPY", "THINKING", "BORED", "SLEEPY" };
+const char* const SCENE_MSG[6] = {
+  "Beep. All systems go",
+  "Ooh, what's that?",
+  "Beep! Happy to help!",
+  "Hmm, pondering...",
+  "Anything to do yet?",
+  "Zzz... zzz... zzz",
 };
 
-// Face geometry, sprite-relative (inside the 's' screen: rows 4-9, cols 3-13).
-#define EYE_ROW    4
-#define EYE_L_COL  4
-#define EYE_R_COL 10
-#define MOUTH_ROW  7
-#define MOUTH_COL  5
+// Per-state mood word and default bubble message (S_BUSY..S_ERR).
+const char* const STATE_MOOD[4] = { "WORKING", "HAPPY", "ALERT!", "ERROR" };
+const char* const STATE_MSG[4] = {
+  "Crunching bits...",
+  "Done! Your turn!",
+  "Human needed here!",
+  "Ouch! Hit an error.",
+};
 
-// Eyes: 3x3 cells, one byte per row, bit 2 = leftmost cell.
-const uint8_t EYE_OPEN[3]   = { 0b111, 0b111, 0b111 };
-const uint8_t EYE_HAPPY[3]  = { 0b010, 0b101, 0b000 };  // ^ ^
-const uint8_t EYE_CLOSED[3] = { 0b000, 0b000, 0b111 };
-const uint8_t EYE_X[3]      = { 0b101, 0b010, 0b101 };  // x x
-
-// Mouths: 7x2 cells, one byte per row, bit 6 = leftmost cell.
-const uint8_t MOUTH_SMILE[2] = { 0b1000001, 0b0111110 };
-const uint8_t MOUTH_GRIN[2]  = { 0b1111111, 0b0111110 };  // open happy mouth
-const uint8_t MOUTH_FLAT[2]  = { 0b0000000, 0b0111110 };
-const uint8_t MOUTH_O[2]     = { 0b0011100, 0b0011100 };  // surprised
-const uint8_t MOUTH_FROWN[2] = { 0b0111110, 0b1000001 };
-
-uint8_t canvas[GH][GW];
-uint8_t prevc[GH][GW];
-int originX, originY;
+// Header action word per state (S_IDLE..S_ERR)
+const char* const STATE_ACTION[5] = { "IDLE", "BUSY", "READY", "ATTENTION", "ERROR" };
 
 uint8_t state = S_IDLE;
-char msg[22] = "";
-char lastMsg[22] = "\x01";
-char stTxt[16] = "", stPrev[16] = "\x01";
-uint16_t stCol = 0, stPrevCol = 1;
-uint16_t lastBorder = 1;
+uint8_t sceneIdx = 255;
+unsigned long sceneStart = 0;
+unsigned long attnShakeTimer = 0;
 
+char msg[22] = "";                 // last message from the terminal/daemon
 char lineBuf[28];
 uint8_t lineLen = 0;
 
-inline void putCell(int r, int c, uint8_t v) {
-  if ((unsigned)r < GH && (unsigned)c < GW) canvas[r][c] = v;
+// Dirty-draw caches
+char bubblePrev[22] = "\x01";
+char userPrev[22] = "\x01";
+char moodPrev[10] = "\x01";
+uint16_t moodPrevCol = 0;
+const char* actionPrev = nullptr;
+uint16_t lastBorder = 1;
+
+void resetFace() {
+  eyes.setWidth(16, 16);
+  eyes.setHeight(20, 20);
+  eyes.setBorderradius(7, 7);      // tall rounded ovals, like the reference
+  eyes.setSpacebetween(8);
+  eyes.setMood(DEFAULT);
+  eyes.setPosition(DEFAULT);
+  eyes.setCuriosity(OFF);          // face is small; growing eyes overflow it
+  eyes.setIdleMode(OFF);
+  eyes.setAutoblinker(ON, 2, 3);
+  eyes.open();
+  mouth.setColor(C_CYAN);
 }
 
-void drawEye(int top, int col, const uint8_t rows[3], uint8_t color) {
-  for (uint8_t r = 0; r < 3; r++)
-    for (uint8_t c = 0; c < 3; c++)
-      if ((rows[r] >> (2 - c)) & 1) putCell(top + EYE_ROW + r, col + c, color);
-}
-
-void drawMouth(int top, const uint8_t rows[2], uint8_t color) {
-  for (uint8_t r = 0; r < 2; r++)
-    for (uint8_t c = 0; c < 7; c++)
-      if ((rows[r] >> (6 - c)) & 1) putCell(top + MOUTH_ROW + r, MOUTH_COL + c, color);
-}
-
-void applyFace(int top, unsigned long ms) {
-  const uint8_t* eye   = EYE_OPEN;
-  const uint8_t* mouth = MOUTH_SMILE;
-  uint8_t color = P_CYAN;
-  int8_t look = 0;                              // eye x-offset: -1, 0, +1
-  static const int8_t SWEEP[4] = { -1, 0, 1, 0 };
-
-  switch (state) {
-    case S_BUSY:  look = SWEEP[(ms / SCAN_STEP) & 3];     mouth = MOUTH_FLAT;  break;
-    case S_READY: eye = EYE_HAPPY;                        mouth = MOUTH_GRIN;  break;
-    case S_ATTN:  color = P_WHITE;                        mouth = MOUTH_O;     break;
-    case S_ERR:   eye = EYE_X; color = P_RED;             mouth = MOUTH_FROWN; break;
-    default:      look = SWEEP[(ms / GLANCE_PERIOD) & 3];                      break;
+void enterScene(uint8_t kind) {
+  resetFace();
+  switch (kind) {
+    case SC_LOOK:      eyes.setIdleMode(ON, 1, 2);  mouth.setShape(MOUTH_SMILE); break;
+    case SC_HAPPY:     eyes.setMood(HAPPY); eyes.anim_laugh(); mouth.setShape(MOUTH_GRIN); break;
+    case SC_THINK:     eyes.setPosition(NE);        mouth.setShape(MOUTH_DOTS);  break;
+    case SC_IMPATIENT: eyes.setMood(SUSPICIOUS);    mouth.setShape(MOUTH_FLAT);  break;
+    case SC_SLEEPY:    eyes.setMood(TIRED); eyes.setPosition(S);
+                       eyes.setAutoblinker(ON, 1, 1); mouth.setShape(MOUTH_FLAT); break;
+    default:           mouth.setShape(MOUTH_SMILE); break;   // SC_WAIT
   }
-
-  // Only round open eyes blink; attention eyes stay wide, X/happy never blink.
-  if (eye == EYE_OPEN && state != S_ATTN && (ms % BLINK_PERIOD) < BLINK_DUR)
-    eye = EYE_CLOSED;
-
-  drawEye(top, EYE_L_COL + look, eye, color);
-  drawEye(top, EYE_R_COL + look, eye, color);
-  drawMouth(top, mouth, color);
 }
 
-void buildCanvas(int top, unsigned long ms) {
-  memset(canvas, P_BG, sizeof(canvas));
-  for (uint8_t r = 0; r < SH; r++)
-    for (uint8_t c = 0; c < SW; c++) {
-      uint8_t v = ci((char)pgm_read_byte(&BOT[r][c]));
-      if (v) putCell(top + r, c, v);
-    }
-  applyFace(top, ms);
+void enterState() {
+  resetFace();
+  switch (state) {
+    case S_BUSY:
+      mouth.setShape(MOUTH_TALK);  mouth.setColor(C_AMBER);
+      break;
+    case S_READY:
+      eyes.setMood(HAPPY); eyes.anim_laugh();
+      mouth.setShape(MOUTH_GRIN);  mouth.setColor(C_GREEN);
+      break;
+    case S_ATTN:
+      eyes.setWidth(20, 20); eyes.setHeight(24, 24);   // wide startled eyes
+      eyes.anim_confused();
+      mouth.setShape(MOUTH_O);     mouth.setColor(C_RED);
+      attnShakeTimer = millis();
+      break;
+    case S_ERR:
+      eyes.setMood(ANGRY); eyes.setAutoblinker(OFF);   // frozen glare
+      mouth.setShape(MOUTH_ZIGZAG); mouth.setColor(C_RED);
+      break;
+    default:
+      sceneIdx = 255;              // hand over to the idle scene machine
+      break;
+  }
 }
 
-void renderDiff() {
-  for (uint8_t r = 0; r < GH; r++)
-    for (uint8_t c = 0; c < GW; c++)
-      if (canvas[r][c] != prevc[r][c]) {
-        tft.fillRect(originX + c * SCALE, originY + r * SCALE, SCALE, SCALE, PAL[canvas[r][c]]);
-        prevc[r][c] = canvas[r][c];
+void tickState(unsigned long now) {
+  switch (state) {
+    case S_IDLE:
+      if (sceneIdx == 255 || now - sceneStart >= IDLE_SCENES[sceneIdx].dur) {
+        sceneIdx = (sceneIdx == 255) ? 0 : (sceneIdx + 1) % SCENE_COUNT;
+        sceneStart = now;
+        enterScene(IDLE_SCENES[sceneIdx].kind);
       }
+      if (IDLE_SCENES[sceneIdx].kind == SC_IMPATIENT) {
+        eyes.setPosition(((now / 700) & 1) ? E : W);   // side glances (calm pace)
+      }
+      break;
+    case S_BUSY:
+      eyes.setPosition(((now / 900) & 1) ? E : W);     // scanning while working
+      break;
+    case S_ATTN:
+      if (now - attnShakeTimer >= 3000) {              // gentle periodic nudge
+        eyes.anim_confused();
+        attnShakeTimer = now;
+      }
+      break;
+    default:
+      break;
+  }
 }
 
 void handleLine(char* s) {
+  uint8_t prevState = state;
   char cmd = s[0];
   char* m = s + 1;
   if (*m == ' ') m++;
@@ -182,6 +191,30 @@ void handleLine(char* s) {
     default: return;
   }
   strncpy(msg, m, 21); msg[21] = '\0';
+  if (state != prevState) enterState();
+}
+
+// Test button: every press feeds the next state through handleLine(),
+// exactly as if it arrived over serial.
+void pollButton(unsigned long now) {
+  static const char TEST_CMD[5] = { '.', '>', '=', '!', 'x' };
+  static const char* const TEST_MSG[5] =
+    { "idle test", "busy test", "ready test", "attention test", "error test" };
+  static uint8_t testIdx = 0;
+  static bool prevDown = false;
+  static unsigned long lastPress = 0;
+
+  bool down = digitalRead(BTN_PIN) == LOW;
+  if (down && !prevDown && now - lastPress > 250) {   // debounce
+    lastPress = now;
+    char line[24];
+    line[0] = TEST_CMD[testIdx];
+    line[1] = ' ';
+    strcpy(line + 2, TEST_MSG[testIdx]);
+    handleLine(line);
+    testIdx = (testIdx + 1) % 5;
+  }
+  prevDown = down;
 }
 
 void pollSerial() {
@@ -195,96 +228,148 @@ void pollSerial() {
   }
 }
 
-void computeStatus(unsigned long ms) {
+//*********************************************************************
+//  Card UI
+//*********************************************************************
+
+void drawStaticUI() {
+  tft.fillScreen(C_BG);
+
+  // Header
+  tft.drawRoundRect(2, 2, 124, 15, 3, C_DIM);
+  tft.setTextSize(1);
+  tft.setTextColor(C_CYAN);
+  tft.setCursor(8, 6);
+  tft.print("PET BOT");
+
+  // Play area: just stars — the face floats on the dark background
+  static const uint8_t stars[6][2] = { {16,26}, {108,32}, {12,62}, {114,70}, {24,88}, {102,24} };
+  for (uint8_t i = 0; i < 6; i++) tft.fillRect(stars[i][0], stars[i][1], 2, 2, C_DIM);
+
+  // Emotion panel (big centered mood word)
+  tft.drawRoundRect(2, 98, 124, 34, 3, C_DIM);
+
+  // Speech bubble with a mini bot icon
+  tft.drawRoundRect(2, 134, 124, 24, 4, C_DIM);
+  tft.fillRoundRect(6, 139, 16, 14, 5, C_WHITE);
+  tft.fillRect(10, 143, 2, 4, C_FACE);
+  tft.fillRect(16, 143, 2, 4, C_FACE);
+}
+
+void drawHeaderAction() {
+  const char* word = STATE_ACTION[state];
+  if (word == actionPrev) return;
+  uint16_t col;
   switch (state) {
-    case S_ATTN: {
-      if (((ms / 300) & 1) == 0) strcpy(stTxt, "ATTENTION!"); else stTxt[0] = 0;
-      stCol = C_RED; break;
-    }
-    case S_BUSY: {
-      uint8_t dots = (ms / 400) % 4;
-      strcpy(stTxt, "WORKING");
-      for (uint8_t i = 0; i < dots; i++) stTxt[7 + i] = '.';
-      stTxt[7 + dots] = 0; stCol = C_AMBER; break;
-    }
-    case S_READY: strcpy(stTxt, "YOUR TURN"); stCol = C_GREEN; break;
-    case S_ERR:   strcpy(stTxt, "ERROR");     stCol = C_RED;   break;
-    default:      stTxt[0] = 0;               stCol = C_BG;    break;
+    case S_BUSY:  col = C_AMBER; break;
+    case S_READY: col = C_GREEN; break;
+    case S_ATTN:
+    case S_ERR:   col = C_RED;   break;
+    default:      col = C_CYAN;  break;
   }
+  tft.fillRect(56, 4, 68, 10, C_BG);
+  tft.setTextSize(1);
+  tft.setTextColor(col);
+  tft.setCursor(122 - 6 * (int)strlen(word), 6);   // right-aligned
+  tft.print(word);
+  actionPrev = word;
 }
 
-void drawStatus() {
-  if (strcmp(stTxt, stPrev) != 0 || stCol != stPrevCol) {
-    tft.fillRect(0, 0, 128, STATUS_H, C_BG);
-    if (stTxt[0]) {
-      tft.setTextSize(1); tft.setTextColor(stCol);
-      tft.setCursor((128 - (int)strlen(stTxt) * 6) / 2, 4);
-      tft.print(stTxt);
-    }
-    strcpy(stPrev, stTxt); stPrevCol = stCol;
+void drawMood() {
+  const char* word;
+  uint16_t col;
+  switch (state) {
+    case S_BUSY:  word = STATE_MOOD[0]; col = C_AMBER; break;
+    case S_READY: word = STATE_MOOD[1]; col = C_GREEN; break;
+    case S_ATTN:  word = STATE_MOOD[2]; col = C_RED;   break;
+    case S_ERR:   word = STATE_MOOD[3]; col = C_RED;   break;
+    default:      word = SCENE_MOOD[IDLE_SCENES[sceneIdx].kind]; col = C_CYAN; break;
   }
+  if (strcmp(word, moodPrev) == 0 && col == moodPrevCol) return;
+  tft.fillRect(6, 101, 116, 9, C_BG);
+  tft.setTextSize(1);
+  tft.setTextColor(col);
+  tft.setCursor(8, 102);
+  tft.print(word);
+  strcpy(moodPrev, word); moodPrevCol = col;
 }
 
-void drawBorder(unsigned long ms) {
+// The message you sent from the terminal, shown in the middle panel.
+void drawUserMsg() {
+  if (strcmp(msg, userPrev) == 0) return;
+  tft.fillRect(6, 111, 116, 19, C_BG);
+  tft.setTextSize(1);
+  tft.setTextColor(C_AMBER);
+  tft.setCursor(8, 112);
+  tft.print("> ");
+  uint8_t len = strlen(msg);
+  for (uint8_t i = 0; i < len && i < 17; i++) tft.print(msg[i]);
+  if (len > 17) {
+    tft.setCursor(20, 121);
+    for (uint8_t i = 17; i < len; i++) tft.print(msg[i]);
+  }
+  strcpy(userPrev, msg);
+}
+
+// The bot's own per-expression phrase, always in the bottom bubble.
+void drawBubble() {
+  const char* text;
+  if (state == S_IDLE) text = SCENE_MSG[IDLE_SCENES[sceneIdx].kind];
+  else text = STATE_MSG[state - 1];
+  if (strcmp(text, bubblePrev) == 0) return;
+  tft.fillRect(24, 137, 100, 19, C_BG);
+  tft.setTextSize(1);
+  tft.setTextColor(C_WHITE);
+  uint8_t len = strlen(text);
+  tft.setCursor(26, 138);
+  for (uint8_t i = 0; i < len && i < 16; i++) tft.print(text[i]);
+  if (len > 16) {
+    tft.setCursor(26, 148);
+    for (uint8_t i = 16; i < len; i++) tft.print(text[i]);
+  }
+  strcpy(bubblePrev, text);
+}
+
+void drawBorder(unsigned long now) {
   uint16_t bc = C_BG;
-  if (state == S_ATTN) bc = ((ms / 300) & 1) ? C_RED : C_BG;
+  if (state == S_ATTN) bc = ((now / 300) & 1) ? C_RED : C_BG;
   if (bc != lastBorder) {
     tft.drawRect(0, 0, 128, 160, bc);
-    tft.drawRect(1, 1, 126, 158, bc);
     lastBorder = bc;
-  }
-}
-
-void drawMsg() {
-  if (strcmp(msg, lastMsg) != 0) {
-    tft.fillRect(0, MSG_Y, 128, MSG_H, C_BG);
-    tft.setTextSize(1); tft.setTextColor(C_WHITE);
-    tft.setCursor(2, MSG_Y + 3);
-    tft.print(msg);
-    strcpy(lastMsg, msg);
   }
 }
 
 void setup() {
   Serial.begin(115200);
+  pinMode(BTN_PIN, INPUT_PULLUP);
   tft.initR(INITR_BLACKTAB);   // try INITR_GREENTAB if the screen looks wrong
   tft.setRotation(0);
-  originX = (128 - GW * SCALE) / 2;
-  originY = 18;
-  tft.fillScreen(C_BG);
-  memset(prevc, 255, sizeof(prevc));   // force full first paint
+
+  drawStaticUI();
+
+  eyes.setDisplayColors(C_BG, C_CYAN);
+  eyes.setOrigin(EYES_X, EYES_Y);
+  eyes.begin(EYES_W, EYES_H, 50);
+  mouth.begin(MOUTH_CX, MOUTH_CY, C_BG, C_CYAN);
+
+  enterState();   // S_IDLE -> scene machine
+  tickState(millis());
 }
 
 void loop() {
   pollSerial();
-  unsigned long ms = millis();
+  unsigned long now = millis();
+  pollButton(now);
 
-  unsigned int bouncePeriod;   // 0 = still
-  switch (state) {
-    case S_BUSY:  bouncePeriod = 1500; break;
-    case S_READY: bouncePeriod = 3000; break;
-    case S_ATTN:  bouncePeriod = 900;  break;
-    case S_ERR:   bouncePeriod = 0;    break;
-    default:      bouncePeriod = 6000; break;
-  }
+  tickState(now);
+  eyes.update();
+  mouth.update();
 
-  unsigned long phase = bouncePeriod ? ms % bouncePeriod : BOUNCE_DUR;
-  int lift = 0;
-  if (phase < BOUNCE_DUR) {
-    // integer triangle wave 0 -> BOUNCE_H -> 0 (no float sin needed)
-    unsigned int half = BOUNCE_DUR / 2;
-    lift = (phase < half) ? (int)(BOUNCE_H * phase / half)
-                          : (int)(BOUNCE_H * (BOUNCE_DUR - phase) / half);
-  }
-  int bob = (lift == 0 && bouncePeriod) ? (int)((ms / BOB_MS) & 1) : 0;
-  int top = BASE_TOP + bob - lift;
+  drawHeaderAction();
+  drawMood();
+  drawUserMsg();
+  drawBubble();
+  drawBorder(now);
 
-  buildCanvas(top, ms);
-  renderDiff();
-  computeStatus(ms);
-  drawStatus();
-  drawBorder(ms);
-  drawMsg();
-
-  delay(30);
+  delay(10);
 }

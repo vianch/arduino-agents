@@ -72,19 +72,23 @@ If there is no current-limiting resistor near the LED pin, add ~50–100Ω in se
 
 ## States and expressions
 
-| Command | State | Face | Motion / extras |
+The screen is a pet-card UI: a **PET BOT** header with the current action (IDLE / BUSY / READY / ATTENTION / ERROR, color-coded), a big floating face (smooth tweened RoboEyes + a curvy mouth) over a starfield, a middle panel with the mood word and the last message you sent from the terminal (amber, prefixed `>`), and a bottom speech bubble where the bot talks with its own per-expression phrases.
+
+| Command | State | Face / card | Bot phrase |
 |---|---|---|---|
-| `!` | Attention — Claude needs you | Wide white eyes, surprised `O` mouth | Flashing red border, `ATTENTION!`, frantic bouncing |
-| `>` | Busy — working | Eyes sweep left–right, flat mouth | Amber `WORKING...`, fast bounces |
-| `=` | Ready — your turn | Happy `^ ^` eyes, big open grin | Green `YOUR TURN`, calm bounces |
-| `x` | Error | Red `x x` eyes, frown | Red `ERROR`, completely still |
-| `.` | Idle | Cyan eyes wandering slowly, small smile, blinks | Cleared, slow idle bob |
+| `!` | Attention | Wide startled eyes, gentle shake, red `O` mouth, red flashing border, `ALERT!` | `Human needed here!` |
+| `>` | Busy | Eyes scan left–right, amber talking mouth, `WORKING` | `Crunching bits...` |
+| `=` | Ready | Happy eyes + laugh bounce, green grin, `HAPPY` | `Done! Your turn!` |
+| `x` | Error | Angry lids frozen, red zigzag mouth, `ERROR` | `Ouch! Hit an error.` |
+| `.` | Idle | Cycles moods (7–11 s each): `CALM` (smile), `CURIOUS` (wandering eyes), `HAPPY` (grin), `THINKING` (looks up + animated `...`), `BORED` (suspicious lids, slow side glances), `SLEEPY` (tired lids, looks down) | per mood, e.g. `Zzz... zzz... zzz` |
 
 Each command is followed by optional text shown in the message bar at the bottom of the screen (max 21 characters).
 
 ## Files
 
 - `bot_notifier/bot_notifier.ino` — Arduino firmware (Arduino IDE opens the folder as a sketch).
+- `bot_notifier/RoboEyes_TFT.h` — FluxGarage RoboEyes V1.1.1 ported to framebuffer-less TFTs (dirty-rect rendering, 16-bit colors, drawing origin, new `SUSPICIOUS` mood; GPL-3.0).
+- `bot_notifier/RoboMouth_TFT.h` — small curvy mouth shapes (GFX arc helpers): flat, smile, frown, grin, `O`, smirk, zigzag, animated talk, animated thinking dots.
 - `frogd.py` — serial daemon; holds the port open and forwards messages.
 - `frog-hook.sh` — Claude Code hook script; translates hook events into bot commands.
 - `assets/wiring-uno.svg`, `assets/wiring-nano.svg` — wiring diagrams shown above.
@@ -191,6 +195,10 @@ Hook event names and the stdin JSON field names change between Claude Code relea
 3. Confirm a manual `echo "= hi" > /tmp/frog.pipe` makes the bot grin.
 4. Restart your Claude Code session so it reloads `settings.json`.
 
+## Test button (optional)
+
+Wire a push button between **D3 and GND** (the firmware uses the internal pull-up; no resistor needed). Each press cycles through the five states in sequence — idle → busy → ready → attention → error — through the same code path as serial messages, with a sample message each. Idle expressions keep cycling on their own while idle. No button connected = pin stays high, nothing happens.
+
 ## Stopping the daemon
 
 Foreground (holding the terminal): `Ctrl-C`.
@@ -236,12 +244,13 @@ rm -f /tmp/frog.pipe
 
 ## Tuning (firmware)
 
-- `SCALE` — bot size. `17 * SCALE` must stay ≤ 128.
-- `BASE_TOP` — resting height in the grid.
-- `BLINK_PERIOD` / `BLINK_DUR`, `GLANCE_PERIOD` (idle eye wander), `SCAN_STEP` (busy eye sweep), `BOUNCE_DUR`, `BOUNCE_H`, `BOB_MS` — timing of each behavior, independent so motion does not look mechanical.
-- Per-state bounce speed is set in the `switch (state)` block in `loop()`; per-state faces in `applyFace()`.
-- Body shape: edit the `BOT[]` rows (each exactly 17 characters). Legend: `.` background, `d` dark outline, `b` body, `s` face screen, `w` white. Colors live in `PAL[]`.
-- Expressions: eyes are 3x3 bitmaps (`EYE_*`), mouths are 7x2 bitmaps (`MOUTH_*`), one byte per row, MSB = leftmost cell. Add a shape and map it to a state in `applyFace()`.
-- Status/message colors: `C_RED`, `C_AMBER`, `C_GREEN`, `C_WHITE`, `C_CYAN`, `C_BG`.
+- Layout: `EYES_X/Y/W/H` (eyes' sub-region inside the face screen), `MOUTH_CX/CY`; body/panels are drawn in `drawStaticUI()`.
+- Eye look: `resetFace()` sets size (11x14 ovals), border radius, spacing, auto-blink cadence.
+- Idle personality: `IDLE_SCENES[]` (`{duration_ms, scene}`) plus the parallel `SCENE_MOOD` / `SCENE_ENERGY` / `SCENE_MSG` tables. Per-state equivalents in `STATE_MOOD` / `STATE_MSG`.
+- Per-state faces are configured in `enterState()`; continuous gaze animation (scanning, impatient glances, attention shakes) in `tickState()`.
+- Shake intensity: `flickerStepMs` (toggle cadence, default 70 ms) and the amplitudes in `anim_confused` (4 px) / `anim_laugh` (2 px) inside `RoboEyes_TFT.h`.
+- Eyes API (RoboEyes_TFT.h): `setMood(DEFAULT/TIRED/ANGRY/HAPPY/SUSPICIOUS)`, `setPosition(N/NE/E/SE/S/SW/W/NW/DEFAULT)`, `setIdleMode`, `setCuriosity`, `anim_laugh()`, `anim_confused()`, `setAutoblinker`, H/V flicker.
+- Mouth API (RoboMouth_TFT.h): `setShape(MOUTH_FLAT/SMILE/FROWN/GRIN/O/SMIRK/ZIGZAG/TALK/DOTS)`, `setColor`; `talkInterval`/`dotsInterval` tune the animated shapes.
+- Colors: `C_BG` (dark navy), `C_RED`, `C_AMBER`, `C_GREEN`, `C_WHITE`, `C_CYAN`.
 
-RAM use: two 17x18 framebuffers, ~612 bytes; sprite art is stored in flash.
+No framebuffer needed: both libraries erase only the strips of the previous frame that the new frame no longer covers, so rendering is flicker-free.
