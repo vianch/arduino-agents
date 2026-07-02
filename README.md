@@ -80,13 +80,13 @@ If there is no current-limiting resistor near the LED pin, add ~50–100Ω in se
 
 ## States and expressions
 
-The screen is a pet-card UI: a **PET BOT** header with the current action (IDLE / BUSY / READY / ATTENTION / ERROR, color-coded), a big floating face (smooth tweened RoboEyes + a curvy mouth) over a starfield, a middle panel with the mood word and the last message you sent from the terminal (amber, prefixed `>`), and a bottom speech bubble where the bot talks with its own per-expression phrases.
+The screen is a pet-card UI: a **CLABOT** header with the current action (IDLE / BUSY / READY / ATTENTION / ERROR, color-coded), a big floating face (smooth tweened RoboEyes + a curvy mouth) over a starfield, a middle panel with the mood word and the last message you sent from the terminal (amber, prefixed `>`), and a bottom speech bubble where the bot talks with its own per-expression phrases.
 
 | Command | State | Face / card | Bot phrase |
 |---|---|---|---|
 | `!` | Attention | Wide startled eyes, gentle shake, red `O` mouth, red flashing border, `ALERT!` | `Human needed here!` |
 | `>` | Busy | Eyes scan left–right, amber talking mouth, `WORKING` | `Crunching bits...` |
-| `=` | Ready | Happy eyes + laugh bounce, green grin, `HAPPY` | `Done! Your turn!` |
+| `=` | Ready | Happy eyes + laugh bounce, green grin, `HAPPY`; falls back to Idle after 10 s | `Done! Your turn!` |
 | `x` | Error | Angry lids frozen, red zigzag mouth, `ERROR` | `Ouch! Hit an error.` |
 | `.` | Idle | Cycles moods (7–11 s each): `CALM` (smile), `CURIOUS` (wandering eyes), `HAPPY` (grin), `THINKING` (looks up + animated `...`), `BORED` (suspicious lids, slow side glances), `SLEEPY` (tired lids, looks down) | per mood, e.g. `Zzz... zzz... zzz` |
 
@@ -98,7 +98,7 @@ Each command is followed by optional text shown in the message bar at the bottom
 - `bot_notifier/RoboEyes_TFT.h` — FluxGarage RoboEyes V1.1.1 ported to framebuffer-less TFTs (dirty-rect rendering, 16-bit colors, drawing origin, new `SUSPICIOUS` mood; GPL-3.0).
 - `bot_notifier/RoboMouth_TFT.h` — small curvy mouth shapes (GFX arc helpers): flat, smile, frown, grin, `O`, smirk, zigzag, animated talk, animated thinking dots.
 - `demon/demon.py` — serial daemon; holds the port open and forwards messages.
-- `demon/frog-demon.sh` — Claude Code hook script; translates hook events into bot commands.
+- `demon/demon.sh` — Claude Code hook script; translates hook events into bot commands.
 - `assets/wiring-uno.svg`, `assets/wiring-nano.svg` — wiring diagrams shown above.
 - `settings.json` — the hook block to merge into `~/.claude/settings.json`.
 
@@ -169,10 +169,10 @@ Writing to the pipe from a plain shell when no reader is connected will block th
 
 ## Claude Code integration
 
-Save the hook script as `~/bin/frog-demon.sh` and make it executable:
+Save the hook script as `~/bin/demon.sh` and make it executable:
 
 ```bash
-chmod +x ~/bin/frog-demon.sh
+mkdir -p ~/bin && cp demon/demon.sh ~/bin/demon.sh && chmod +x ~/bin/demon.sh
 ```
 
 Add the hooks to `~/.claude/settings.json` (same content as `settings.json` in this repo):
@@ -180,11 +180,11 @@ Add the hooks to `~/.claude/settings.json` (same content as `settings.json` in t
 ```json
 {
   "hooks": {
-    "Notification":     [ { "hooks": [ { "type": "command", "command": "~/bin/frog-demon.sh '!'" } ] } ],
-    "UserPromptSubmit": [ { "hooks": [ { "type": "command", "command": "~/bin/frog-demon.sh '>'" } ] } ],
-    "Stop":             [ { "hooks": [ { "type": "command", "command": "~/bin/frog-demon.sh '='" } ] } ],
-    "SubagentStop":     [ { "hooks": [ { "type": "command", "command": "~/bin/frog-demon.sh '='" } ] } ],
-    "SessionStart":     [ { "hooks": [ { "type": "command", "command": "~/bin/frog-demon.sh '.'" } ] } ]
+    "Notification":     [ { "hooks": [ { "type": "command", "command": "~/bin/demon.sh '!'" } ] } ],
+    "UserPromptSubmit": [ { "hooks": [ { "type": "command", "command": "~/bin/demon.sh '>'" } ] } ],
+    "Stop":             [ { "hooks": [ { "type": "command", "command": "~/bin/demon.sh '='" } ] } ],
+    "SubagentStop":     [ { "hooks": [ { "type": "command", "command": "~/bin/demon.sh '='" } ] } ],
+    "SessionStart":     [ { "hooks": [ { "type": "command", "command": "~/bin/demon.sh '.'" } ] } ]
   }
 }
 ```

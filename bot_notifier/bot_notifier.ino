@@ -1,4 +1,4 @@
-// bot_notifier.ino — "PET BOT" status card for Claude Code sessions.
+// bot_notifier.ino — "CLABOT" status card for Claude Code sessions.
 // Hardware: Arduino Nano/Uno + ST7735S 128x160 SPI TFT. Protocol: README.md.
 //
 // Serial commands (one line each, 115200 baud):
@@ -6,7 +6,7 @@
 //
 // Screen layout (pet-card style):
 //   +----------------------------+
-//   | PET BOT              LV.01 |  header
+//   | CLABOT               LV.01 |  header
 //   |      (o o)  <- round bot   |  play area: white body, dark face,
 //   |       \_/      with feet   |  RoboEyes + curvy mouth, stars
 //   | ENERGY [######  ]          |  stats panel
@@ -85,6 +85,8 @@ uint8_t state = S_IDLE;
 uint8_t sceneIdx = 255;
 unsigned long sceneStart = 0;
 unsigned long attnShakeTimer = 0;
+unsigned long readyStart = 0;
+const unsigned long READY_TIMEOUT_MS = 10000;   // READY falls back to IDLE after this
 
 char msg[22] = "";                 // last message from the terminal/daemon
 char lineBuf[28];
@@ -134,6 +136,7 @@ void enterState() {
     case S_READY:
       eyes.setMood(HAPPY); eyes.anim_laugh();
       mouth.setShape(MOUTH_GRIN);  mouth.setColor(C_GREEN);
+      readyStart = millis();
       break;
     case S_ATTN:
       eyes.setWidth(20, 20); eyes.setHeight(24, 24);   // wide startled eyes
@@ -165,6 +168,13 @@ void tickState(unsigned long now) {
       break;
     case S_BUSY:
       eyes.setPosition(((now / 900) & 1) ? E : W);     // scanning while working
+      break;
+    case S_READY:
+      if (now - readyStart >= READY_TIMEOUT_MS) {      // back to idle, like first boot
+        state = S_IDLE;
+        msg[0] = '\0';
+        enterState();
+      }
       break;
     case S_ATTN:
       if (now - attnShakeTimer >= 3000) {              // gentle periodic nudge
@@ -240,7 +250,7 @@ void drawStaticUI() {
   tft.setTextSize(1);
   tft.setTextColor(C_CYAN);
   tft.setCursor(8, 6);
-  tft.print("PET BOT");
+  tft.print("CLABOT");
 
   // Play area: just stars — the face floats on the dark background
   static const uint8_t stars[6][2] = { {16,26}, {108,32}, {12,62}, {114,70}, {24,88}, {102,24} };
