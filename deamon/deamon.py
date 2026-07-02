@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-# frogd.py — run once, leave it running
+# demond.py — run once, leave it running
 import os, sys, time, glob, serial
 
-PIPE = os.environ.get("FROG_PIPE", "/tmp/frog.pipe")
+PIPE = os.environ.get("DEMON_PIPE", "/tmp/demon.pipe")
 BAUD = 115200
 
 def find_port():
-    if os.environ.get("FROG_PORT"):
-        return os.environ["FROG_PORT"]
+    if os.environ.get("DEMON_PORT"):
+        return os.environ["DEMON_PORT"]
     cands = sorted(glob.glob("/dev/cu.usbserial*") +
                    glob.glob("/dev/cu.wchusbserial*") +
                    glob.glob("/dev/cu.usbmodem*"))
@@ -21,7 +21,7 @@ def open_serial():
             try:
                 ser = serial.Serial(port, BAUD, timeout=1)
                 time.sleep(2)  # board reboots when the port opens
-                print(f"frogd: connected {port}", flush=True)
+                print(f"demond: connected {port}", flush=True)
                 return ser
             except (serial.SerialException, OSError):
                 pass
@@ -29,11 +29,11 @@ def open_serial():
 
 def main():
     if not find_port():
-        sys.exit("frogd: no serial port found (set FROG_PORT)")
+        sys.exit("demond: no serial port found (set DEMON_PORT)")
     if not os.path.exists(PIPE):
         os.mkfifo(PIPE)
     ser = open_serial()
-    print(f"frogd: {PIPE} -> serial", flush=True)
+    print(f"demond: {PIPE} -> serial", flush=True)
     while True:
         with open(PIPE, "r") as fifo:      # blocks until a writer connects
             for line in fifo:
