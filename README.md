@@ -97,8 +97,8 @@ Each command is followed by optional text shown in the message bar at the bottom
 - `bot_notifier/bot_notifier.ino` — Arduino firmware (Arduino IDE opens the folder as a sketch).
 - `bot_notifier/RoboEyes_TFT.h` — FluxGarage RoboEyes V1.1.1 ported to framebuffer-less TFTs (dirty-rect rendering, 16-bit colors, drawing origin, new `SUSPICIOUS` mood; GPL-3.0).
 - `bot_notifier/RoboMouth_TFT.h` — small curvy mouth shapes (GFX arc helpers): flat, smile, frown, grin, `O`, smirk, zigzag, animated talk, animated thinking dots.
-- `deamon.py` — serial daemon; holds the port open and forwards messages.
-- `deamon/frog-demon.sh` — Claude Code hook script; translates hook events into bot commands.
+- `demon/demon.py` — serial daemon; holds the port open and forwards messages.
+- `demon/frog-demon.sh` — Claude Code hook script; translates hook events into bot commands.
 - `assets/wiring-uno.svg`, `assets/wiring-nano.svg` — wiring diagrams shown above.
 - `settings.json` — the hook block to merge into `~/.claude/settings.json`.
 
@@ -140,27 +140,27 @@ pip3 install pyserial
 Run the daemon (leave it running):
 
 ```bash
-python3 deamon.py &
+python3 demon/demon.py &
 ```
 
 It auto-detects common USB-serial device names. If it picks the wrong one, find the device with `ls /dev/cu.*` and set it explicitly:
 
 ```bash
-FROG_PORT=/dev/cu.wchusbserial14230 python3 deamon.py &
+DEMON_PORT=/dev/cu.wchusbserial14230 python3 demon/demon.py &
 ```
 
-The pipe path defaults to `/tmp/frog.pipe`; override with `FROG_PIPE` if needed.
+The pipe path defaults to `/tmp/demon.pipe`; override with `DEMON_PIPE` if needed.
 
 ## Terminal usage
 
 With the daemon running, write lines to the pipe. All five commands, with the Claude Code hook that triggers each one automatically:
 
 ```bash
-echo "! approve this?"   > /tmp/frog.pipe  # ATTENTION — wide eyes, O mouth, flashing red border  (hook: Notification)
-echo "> building app"    > /tmp/frog.pipe  # BUSY — scanning eyes, flat mouth, amber WORKING...   (hook: UserPromptSubmit)
-echo "= tests passed"    > /tmp/frog.pipe  # READY — happy ^ ^ eyes, big grin, green YOUR TURN    (hook: Stop / SubagentStop)
-echo "x build failed"    > /tmp/frog.pipe  # ERROR — red x x eyes, frown, still                   (manual only)
-echo "."                 > /tmp/frog.pipe  # IDLE — wandering eyes, small smile, blinks           (hook: SessionStart)
+echo "! approve this?"   > /tmp/demon.pipe  # ATTENTION — wide eyes, O mouth, flashing red border  (hook: Notification)
+echo "> building app"    > /tmp/demon.pipe  # BUSY — scanning eyes, flat mouth, amber WORKING...   (hook: UserPromptSubmit)
+echo "= tests passed"    > /tmp/demon.pipe  # READY — happy ^ ^ eyes, big grin, green YOUR TURN    (hook: Stop / SubagentStop)
+echo "x build failed"    > /tmp/demon.pipe  # ERROR — red x x eyes, frown, still                   (manual only)
+echo "."                 > /tmp/demon.pipe  # IDLE — wandering eyes, small smile, blinks           (hook: SessionStart)
 ```
 
 Text after the command character is optional and shows in the message bar (truncated to 21 characters).
@@ -199,8 +199,8 @@ Hook event names and the stdin JSON field names change between Claude Code relea
 ## Startup order
 
 1. Flash the firmware.
-2. Start `deamon.py`.
-3. Confirm a manual `echo "= hi" > /tmp/frog.pipe` makes the bot grin.
+2. Start `demon/demon.py`.
+3. Confirm a manual `echo "= hi" > /tmp/demon.pipe` makes the bot grin.
 4. Restart your Claude Code session so it reloads `settings.json`.
 
 ## Test button (optional)
@@ -216,25 +216,25 @@ Backgrounded with `&` in the current shell: `kill %1` (check the job number with
 From any other terminal, by name:
 
 ```bash
-pkill -f deamon.py
+pkill -f demon.py
 ```
 
-`-f` matches the full command line because the process name is `python3`, not `deamon.py`. Confirm it is gone:
+`-f` matches the full command line because the process name is `python3`, not `demon.py`. Confirm it is gone:
 
 ```bash
-pgrep -f deamon.py    # no output means it is dead
+pgrep -f demon.py    # no output means it is dead
 ```
 
 If it ignores a normal kill:
 
 ```bash
-pkill -9 -f deamon.py
+pkill -9 -f demon.py
 ```
 
-The FIFO at `/tmp/frog.pipe` persists after the daemon exits and is harmless. Remove it if you want:
+The FIFO at `/tmp/demon.pipe` persists after the daemon exits and is harmless. Remove it if you want:
 
 ```bash
-rm -f /tmp/frog.pipe
+rm -f /tmp/demon.pipe
 ```
 
 ## Troubleshooting
@@ -246,8 +246,8 @@ rm -f /tmp/frog.pipe
 - **Random noise / garbage** — SCK or MOSI miswired, RST floating, or 5V feeding a bare 3.3V board.
 - **Nothing at all, backlight off** — VCC or LED pin not powered; confirm GND is shared with the Nano.
 - **Works intermittently** — long jumper wires degrade SPI; shorten them.
-- **`deamon: no serial port found`** — set `FROG_PORT` explicitly (`ls /dev/cu.*`).
-- **Terminal hangs on `echo ... > /tmp/frog.pipe`** — the daemon is not running; start it.
+- **`demon: no serial port found`** — set `DEMON_PORT` explicitly (`ls /dev/cu.*`).
+- **Terminal hangs on `echo ... > /tmp/demon.pipe`** — the daemon is not running; start it.
 - **Bot does not react to Claude Code** — restart the Claude session after editing `settings.json`; verify hook event names for your version.
 
 ## Tuning (firmware)

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# demond.py — run once, leave it running
+# demon.py — run once, leave it running
 import os, sys, time, glob, serial
 
 PIPE = os.environ.get("DEMON_PIPE", "/tmp/demon.pipe")
@@ -21,7 +21,7 @@ def open_serial():
             try:
                 ser = serial.Serial(port, BAUD, timeout=1)
                 time.sleep(2)  # board reboots when the port opens
-                print(f"demond: connected {port}", flush=True)
+                print(f"demon: connected {port}", flush=True)
                 return ser
             except (serial.SerialException, OSError):
                 pass
@@ -29,11 +29,11 @@ def open_serial():
 
 def main():
     if not find_port():
-        sys.exit("demond: no serial port found (set DEMON_PORT)")
+        sys.exit("demon: no serial port found (set DEMON_PORT)")
     if not os.path.exists(PIPE):
         os.mkfifo(PIPE)
     ser = open_serial()
-    print(f"demond: {PIPE} -> serial", flush=True)
+    print(f"demon: {PIPE} -> serial", flush=True)
     while True:
         with open(PIPE, "r") as fifo:      # blocks until a writer connects
             for line in fifo:

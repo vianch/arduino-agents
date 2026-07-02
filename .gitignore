@@ -3,7 +3,7 @@
 .AppleDouble
 .LSOverride
 
-# Python (frogd.py / daemon)
+# Python (demon.py / daemon)
 __pycache__/
 *.py[cod]
 *.egg-info/
