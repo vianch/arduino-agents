@@ -1,5 +1,13 @@
 # Bot Notifier
 
+<p align="center">
+  <img
+    height="720"
+    alt="bot"
+    src="https://github.com/user-attachments/assets/b2f59148-ca70-48dc-8bdb-b336d200a7bd"
+  />
+</p>
+
 A pixel-art robot on a small TFT display, driven by an Arduino Nano, that shows the state of a Claude Code session running on your computer. Your machine pushes one-line status messages over USB serial; the bot changes its facial expression and color, flashing red when Claude Code needs your attention.
 
 The board cannot poll the computer, so communication is one-directional: the computer writes, the firmware reads and reacts.
@@ -254,3 +262,14 @@ rm -f /tmp/frog.pipe
 - Colors: `C_BG` (dark navy), `C_RED`, `C_AMBER`, `C_GREEN`, `C_WHITE`, `C_CYAN`.
 
 No framebuffer needed: both libraries erase only the strips of the previous frame that the new frame no longer covers, so rendering is flicker-free.
+
+## SHORT DEMO
+
+
+
+https://github.com/user-attachments/assets/7aa83274-c571-4e20-a0ab-c7a5254650d3
+
+
+
+https://github.com/user-attachments/assets/5a21ff18-1aad-4d5a-b1a1-079eb418dd48
+
