@@ -84,7 +84,7 @@ The screen is a pet-card UI: a **CLABOT** header with the current action (IDLE /
 
 | Command | State | Face / card | Bot phrase |
 |---|---|---|---|
-| `!` | Attention | Wide startled eyes, gentle shake, red `O` mouth, red flashing border, `ALERT!` | `Human needed here!` |
+| `!` | Attention | Wide startled eyes, gentle shake, red `O` mouth, red flashing border, `ALERT!`; falls back to Idle after 15 s | `Human needed here!` |
 | `>` | Busy | Eyes scan left–right, amber talking mouth, `WORKING` | `Crunching bits...` |
 | `=` | Ready | Happy eyes + laugh bounce, green grin, `HAPPY`; falls back to Idle after 10 s | `Done! Your turn!` |
 | `x` | Error | Angry lids frozen, red zigzag mouth, `ERROR` | `Ouch! Hit an error.` |

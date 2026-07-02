@@ -87,6 +87,8 @@ unsigned long sceneStart = 0;
 unsigned long attnShakeTimer = 0;
 unsigned long readyStart = 0;
 const unsigned long READY_TIMEOUT_MS = 10000;   // READY falls back to IDLE after this
+unsigned long attnStart = 0;
+const unsigned long ATTN_TIMEOUT_MS = 15000;    // ATTENTION falls back to IDLE after this
 
 char msg[22] = "";                 // last message from the terminal/daemon
 char lineBuf[28];
@@ -143,6 +145,7 @@ void enterState() {
       eyes.anim_confused();
       mouth.setShape(MOUTH_O);     mouth.setColor(C_RED);
       attnShakeTimer = millis();
+      attnStart = attnShakeTimer;
       break;
     case S_ERR:
       eyes.setMood(ANGRY); eyes.setAutoblinker(OFF);   // frozen glare
@@ -177,6 +180,12 @@ void tickState(unsigned long now) {
       }
       break;
     case S_ATTN:
+      if (now - attnStart >= ATTN_TIMEOUT_MS) {        // back to idle, like first boot
+        state = S_IDLE;
+        msg[0] = '\0';
+        enterState();
+        break;
+      }
       if (now - attnShakeTimer >= 3000) {              // gentle periodic nudge
         eyes.anim_confused();
         attnShakeTimer = now;
