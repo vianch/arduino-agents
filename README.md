@@ -263,13 +263,20 @@ rm -f /tmp/demon.pipe
 
 No framebuffer needed: both libraries erase only the strips of the previous frame that the new frame no longer covers, so rendering is flicker-free.
 
-## SHORT DEMO
-
-
+## SHORT DEMO NO CLAUDE
 
 https://github.com/user-attachments/assets/7aa83274-c571-4e20-a0ab-c7a5254650d3
 
-
-
 https://github.com/user-attachments/assets/5a21ff18-1aad-4d5a-b1a1-079eb418dd48
+
+## DEMO WITH CLAUDE 
+
+
+
+https://github.com/user-attachments/assets/db32bdbb-d592-49a4-a84d-c38e26ee7061
+
+
+
+https://github.com/user-attachments/assets/68c64bb0-d0d0-40e2-a62c-38c0122a05d1
+
 
