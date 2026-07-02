@@ -1,0 +1,27 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Python (frogd.py / daemon)
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Arduino IDE / arduino-cli build output
+build/
+*.hex
+*.elf
+*.bin
+
+# PlatformIO (in case the sketch moves there)
+.pio/
+.pioenvs/
+.piolibdeps/
+
+# Editors
+.vscode/
+.idea/
+*.swp
