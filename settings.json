@@ -1,9 +1,9 @@
 {
   "hooks": {
-    "Notification":     [ { "hooks": [ { "type": "command", "command": "~/bin/frog-hook.sh '!'" } ] } ],
-    "UserPromptSubmit": [ { "hooks": [ { "type": "command", "command": "~/bin/frog-hook.sh '>'" } ] } ],
-    "Stop":             [ { "hooks": [ { "type": "command", "command": "~/bin/frog-hook.sh '='" } ] } ],
-    "SubagentStop":     [ { "hooks": [ { "type": "command", "command": "~/bin/frog-hook.sh '='" } ] } ],
-    "SessionStart":     [ { "hooks": [ { "type": "command", "command": "~/bin/frog-hook.sh '.'" } ] } ]
+    "Notification":     [ { "hooks": [ { "type": "command", "command": "~/bin/frog-demon.sh '!'" } ] } ],
+    "UserPromptSubmit": [ { "hooks": [ { "type": "command", "command": "~/bin/frog-demon.sh '>'" } ] } ],
+    "Stop":             [ { "hooks": [ { "type": "command", "command": "~/bin/frog-demon.sh '='" } ] } ],
+    "SubagentStop":     [ { "hooks": [ { "type": "command", "command": "~/bin/frog-demon.sh '='" } ] } ],
+    "SessionStart":     [ { "hooks": [ { "type": "command", "command": "~/bin/frog-demon.sh '.'" } ] } ]
   }
 }

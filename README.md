@@ -97,8 +97,8 @@ Each command is followed by optional text shown in the message bar at the bottom
 - `bot_notifier/bot_notifier.ino` — Arduino firmware (Arduino IDE opens the folder as a sketch).
 - `bot_notifier/RoboEyes_TFT.h` — FluxGarage RoboEyes V1.1.1 ported to framebuffer-less TFTs (dirty-rect rendering, 16-bit colors, drawing origin, new `SUSPICIOUS` mood; GPL-3.0).
 - `bot_notifier/RoboMouth_TFT.h` — small curvy mouth shapes (GFX arc helpers): flat, smile, frown, grin, `O`, smirk, zigzag, animated talk, animated thinking dots.
-- `frogd.py` — serial daemon; holds the port open and forwards messages.
-- `frog-hook.sh` — Claude Code hook script; translates hook events into bot commands.
+- `deamon.py` — serial daemon; holds the port open and forwards messages.
+- `deamon/frog-demon.sh` — Claude Code hook script; translates hook events into bot commands.
 - `assets/wiring-uno.svg`, `assets/wiring-nano.svg` — wiring diagrams shown above.
 - `settings.json` — the hook block to merge into `~/.claude/settings.json`.
 
@@ -140,13 +140,13 @@ pip3 install pyserial
 Run the daemon (leave it running):
 
 ```bash
-python3 frogd.py &
+python3 deamon.py &
 ```
 
 It auto-detects common USB-serial device names. If it picks the wrong one, find the device with `ls /dev/cu.*` and set it explicitly:
 
 ```bash
-FROG_PORT=/dev/cu.wchusbserial14230 python3 frogd.py &
+FROG_PORT=/dev/cu.wchusbserial14230 python3 deamon.py &
 ```
 
 The pipe path defaults to `/tmp/frog.pipe`; override with `FROG_PIPE` if needed.
@@ -169,10 +169,10 @@ Writing to the pipe from a plain shell when no reader is connected will block th
 
 ## Claude Code integration
 
-Save the hook script as `~/bin/frog-hook.sh` and make it executable:
+Save the hook script as `~/bin/frog-demon.sh` and make it executable:
 
 ```bash
-chmod +x ~/bin/frog-hook.sh
+chmod +x ~/bin/frog-demon.sh
 ```
 
 Add the hooks to `~/.claude/settings.json` (same content as `settings.json` in this repo):
@@ -180,11 +180,11 @@ Add the hooks to `~/.claude/settings.json` (same content as `settings.json` in t
 ```json
 {
   "hooks": {
-    "Notification":     [ { "hooks": [ { "type": "command", "command": "~/bin/frog-hook.sh '!'" } ] } ],
-    "UserPromptSubmit": [ { "hooks": [ { "type": "command", "command": "~/bin/frog-hook.sh '>'" } ] } ],
-    "Stop":             [ { "hooks": [ { "type": "command", "command": "~/bin/frog-hook.sh '='" } ] } ],
-    "SubagentStop":     [ { "hooks": [ { "type": "command", "command": "~/bin/frog-hook.sh '='" } ] } ],
-    "SessionStart":     [ { "hooks": [ { "type": "command", "command": "~/bin/frog-hook.sh '.'" } ] } ]
+    "Notification":     [ { "hooks": [ { "type": "command", "command": "~/bin/frog-demon.sh '!'" } ] } ],
+    "UserPromptSubmit": [ { "hooks": [ { "type": "command", "command": "~/bin/frog-demon.sh '>'" } ] } ],
+    "Stop":             [ { "hooks": [ { "type": "command", "command": "~/bin/frog-demon.sh '='" } ] } ],
+    "SubagentStop":     [ { "hooks": [ { "type": "command", "command": "~/bin/frog-demon.sh '='" } ] } ],
+    "SessionStart":     [ { "hooks": [ { "type": "command", "command": "~/bin/frog-demon.sh '.'" } ] } ]
   }
 }
 ```
@@ -199,7 +199,7 @@ Hook event names and the stdin JSON field names change between Claude Code relea
 ## Startup order
 
 1. Flash the firmware.
-2. Start `frogd.py`.
+2. Start `deamon.py`.
 3. Confirm a manual `echo "= hi" > /tmp/frog.pipe` makes the bot grin.
 4. Restart your Claude Code session so it reloads `settings.json`.
 
@@ -216,19 +216,19 @@ Backgrounded with `&` in the current shell: `kill %1` (check the job number with
 From any other terminal, by name:
 
 ```bash
-pkill -f frogd.py
+pkill -f deamon.py
 ```
 
-`-f` matches the full command line because the process name is `python3`, not `frogd.py`. Confirm it is gone:
+`-f` matches the full command line because the process name is `python3`, not `deamon.py`. Confirm it is gone:
 
 ```bash
-pgrep -f frogd.py    # no output means it is dead
+pgrep -f deamon.py    # no output means it is dead
 ```
 
 If it ignores a normal kill:
 
 ```bash
-pkill -9 -f frogd.py
+pkill -9 -f deamon.py
 ```
 
 The FIFO at `/tmp/frog.pipe` persists after the daemon exits and is harmless. Remove it if you want:
@@ -246,7 +246,7 @@ rm -f /tmp/frog.pipe
 - **Random noise / garbage** — SCK or MOSI miswired, RST floating, or 5V feeding a bare 3.3V board.
 - **Nothing at all, backlight off** — VCC or LED pin not powered; confirm GND is shared with the Nano.
 - **Works intermittently** — long jumper wires degrade SPI; shorten them.
-- **`frogd: no serial port found`** — set `FROG_PORT` explicitly (`ls /dev/cu.*`).
+- **`deamon: no serial port found`** — set `FROG_PORT` explicitly (`ls /dev/cu.*`).
 - **Terminal hangs on `echo ... > /tmp/frog.pipe`** — the daemon is not running; start it.
 - **Bot does not react to Claude Code** — restart the Claude session after editing `settings.json`; verify hook event names for your version.
 
